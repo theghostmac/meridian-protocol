@@ -15,6 +15,7 @@ pub enum Side {
 }
 
 /// Unique order identifier - wrapping UUID for type safety.
+#[derive(Debug, Copy, Clone)]
 pub struct OrderId(pub Uuid);
 
 impl OrderId {
@@ -76,7 +77,7 @@ pub enum OrderStatus {
 ///
 /// Uses `Decimal` for price/quantity to avoid floating-point
 /// precision issues.
-struct Order {
+pub struct Order {
     pub id: OrderId,
     pub pair: TradingPair,
     pub side: Side,
