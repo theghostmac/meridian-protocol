@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use uuid::Uuid;
 
 /// Which side of the book an order sits on.
-enum Side {
+pub enum Side {
     /// Buy side.
     Bid,
     /// Sell side.
@@ -31,7 +31,7 @@ pub enum OrderType {
     Market,
 }
 
-pub enum  OrderStatus {
+pub enum OrderStatus {
     Open,
     PartiallyFilled,
     Filled,
@@ -58,10 +58,20 @@ struct Order {
     pub trader: String,
 }
 
-struct Fill {
+pub struct Fill {
+    pub id: Uuid,
+    /// The passive (resting) order that was sitting in the book.
+    pub maker_order_id: OrderId,
+    /// The aggressive (incoming) order that triggered the match.
+    pub taker_order_id: OrderId,
 
-}
+    pub pair: TradingPair,
 
-struct OrderBook {
-    pub orders: BTreeMap<Order, Side>,
+    /// Price at which the fill executed (maker's price)
+    pub price: Decimal,
+
+    /// Which side the taker was on.
+    pub taker_side: Side,
+
+    pub timestamp_ns: u64,
 }
