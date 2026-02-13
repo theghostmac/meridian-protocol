@@ -3,5 +3,5 @@
 
 extern crate core;
 
-mod types;
 mod orderbook;
+mod types;

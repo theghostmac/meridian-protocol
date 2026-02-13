@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use rust_decimal::Decimal;
 use crate::types::{Order, OrderId, Side};
+use rust_decimal::Decimal;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// A price level in the book - holds all orders at a given price
 /// in FIFO (time priority) order.
@@ -34,7 +34,7 @@ impl PriceLevel {
 #[derive(Default)]
 pub struct HalfBook {
     /// price -> price level (FIFO queue of order IDs)
-    pub levels: BTreeMap<Decimal, PriceLevel>
+    pub levels: BTreeMap<Decimal, PriceLevel>,
 }
 
 impl HalfBook {
@@ -67,7 +67,9 @@ impl HalfBook {
 
     /// Peek at the front order ID at a given price level.
     pub fn front_order_at(&self, price: &Decimal) -> Option<OrderId> {
-        self.levels.get(price).and_then(|l| l.orders.front().copied())
+        self.levels
+            .get(price)
+            .and_then(|l| l.orders.front().copied())
     }
 }
 
@@ -82,7 +84,7 @@ pub struct OrderBook {
     pub bids: HalfBook,
     pub asks: HalfBook,
     /// All live orders by ID for fast lookup during matching.
-    pub orders: HashMap<OrderId, Order>
+    pub orders: HashMap<OrderId, Order>,
 }
 
 impl OrderBook {
@@ -134,22 +136,28 @@ impl OrderBook {
 
     /// Mid price: (best_bid + best_ask) / 2.
     pub fn mid_price(&self) -> Option<Decimal> {
-        Some((self.best_bid()? + self.best_ask()?)/ Decimal::TWO)
+        Some((self.best_bid()? + self.best_ask()?) / Decimal::TWO)
     }
 
     /// Snapshot of the top N price levels for each side.
     /// Returns (bids, asks) as Vec<(price, total_qty)>.
-    pub fn depth_snapshot(&self, levels: usize)
-    -> (
-    Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>
-    ) {
-        let bids: Vec<(Decimal, Decimal)> = self.bids.levels.iter()
+    pub fn depth_snapshot(
+        &self,
+        levels: usize,
+    ) -> (Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>) {
+        let bids: Vec<(Decimal, Decimal)> = self
+            .bids
+            .levels
+            .iter()
             .rev() // highest first.
             .take(levels)
             .map(|(price, level)| (*price, level.total_quantity))
             .collect();
 
-        let asks: Vec<(Decimal, Decimal)> = self.asks.levels.iter() // lowest first
+        let asks: Vec<(Decimal, Decimal)> = self
+            .asks
+            .levels
+            .iter() // lowest first
             .take(levels)
             .map(|(price, level)| (*price, level.total_quantity))
             .collect();

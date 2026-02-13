@@ -1,7 +1,7 @@
-use std::fmt;
-use std::fmt::Formatter;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::fmt::Formatter;
 use uuid::Uuid;
 
 /// Which side of the book an order sits on.
@@ -15,8 +15,7 @@ pub enum Side {
 }
 
 /// Unique order identifier - wrapping UUID for type safety.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[derive(Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct OrderId(pub Uuid);
 
 impl OrderId {
