@@ -14,8 +14,17 @@ pub enum Side {
     Ask,
 }
 
+impl fmt::Display for Side {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Side::Bid => write!(f, "bid"),
+            Side::Ask => write!(f, "ask"),
+        }
+    }
+}
+
 /// Unique order identifier - wrapping UUID for type safety.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct OrderId(pub Uuid);
 
 impl OrderId {
@@ -37,6 +46,7 @@ impl fmt::Display for OrderId {
 }
 
 /// A trading pair, e.g. SOL/USDT
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TradingPair {
     pub base: String,
     pub quote: String,
@@ -58,6 +68,8 @@ impl fmt::Display for TradingPair {
 }
 
 /// Order type - we start with Limit only, Market comes later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OrderType {
     Limit,
     Market,
@@ -77,6 +89,7 @@ pub enum OrderStatus {
 ///
 /// Uses `Decimal` for price/quantity to avoid floating-point
 /// precision issues.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
     pub id: OrderId,
     pub pair: TradingPair,
@@ -97,6 +110,27 @@ pub struct Order {
     pub trader: String,
 }
 
+impl Order {
+    /// Returns true if the order still has quantity to be filled and isn't cancelled.
+    pub fn is_active(&self) -> bool {
+        self.status == OrderStatus::Open || self.status == OrderStatus::PartiallyFilled
+    }
+
+    /// Updates the order state after a fill.
+    pub fn fill(&mut self, qty: Decimal) {
+        self.quantity_remaining -= qty;
+
+        if self.quantity_remaining <= Decimal::ZERO {
+            self.status = OrderStatus::Filled;
+            self.quantity_remaining = Decimal::ZERO;
+        } else {
+            self.status = OrderStatus::PartiallyFilled;
+        }
+    }
+}
+
+/// A single matched fill - produced by the engine when two orders cross.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fill {
     pub id: Uuid,
     /// The passive (resting) order that was sitting in the book.
@@ -109,10 +143,41 @@ pub struct Fill {
     /// Price at which the fill executed (maker's price)
     pub price: Decimal,
 
+    /// Quantity that was exchanged.
+    pub quantity: Decimal,
+
     /// Which side the taker was on.
     pub taker_side: Side,
 
     pub timestamp_ns: u64,
+}
+
+impl Fill {
+    pub fn new(
+        maker_order_id: OrderId,
+        taker_order_id: OrderId,
+        pair: TradingPair,
+        price: Decimal,
+        quantity: Decimal,
+        taker_side: Side,
+        timestamp_ns: u64,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            maker_order_id,
+            taker_order_id,
+            pair,
+            price,
+            quantity,
+            taker_side,
+            timestamp_ns,
+        }
+    }
+
+    /// Notional value of this fill (price * quantity).
+    pub fn notional(&self) -> Decimal {
+        self.price * self.quantity
+    }
 }
 
 /// Result returned by the engine after processing an order.
