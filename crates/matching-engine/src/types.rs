@@ -1,8 +1,12 @@
 use std::fmt;
-use rust_decimal::Decimal
+use std::fmt::Formatter;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Which side of the book an order sits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Side {
     /// Buy side.
     Bid,
@@ -22,6 +26,12 @@ impl OrderId {
 impl Default for OrderId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl fmt::Display for OrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -53,6 +63,8 @@ pub enum OrderType {
 }
 
 /// Current lifecycle state of an order.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OrderStatus {
     Open,
     PartiallyFilled,

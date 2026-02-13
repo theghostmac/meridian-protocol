@@ -6,3 +6,5 @@ edition.workspace = true
 [dependencies]
 uuid = { workspace = true}
 rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
