@@ -1,6 +1,18 @@
-[package]
-name = "meridian-protocol"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/matching-engine",
+    "crates/settlement",
+    "crates/gateway",
+    "crates/indexer",
+    "crates/common",
+]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["MacBobby"]
+license = "MIT"
+
+
+[workspace.dependencies]
