@@ -121,3 +121,18 @@ pub struct MatchResult {
     pub fills: Vec<Fill>,
     pub status: OrderStatus,
 }
+
+/// A single price level's aggregated data for market depth.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LevelSnapshot {
+    pub price: Decimal,
+    pub quantity: Decimal,
+}
+
+/// A snapshot of the order book's liquidity at a point in time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderBookSnapshot {
+    pub bids: Vec<LevelSnapshot>,
+    pub asks: Vec<LevelSnapshot>,
+    pub timestamp_ns: u64,
+}

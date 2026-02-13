@@ -1,4 +1,4 @@
-use crate::types::{Order, OrderId, Side};
+use crate::types::{LevelSnapshot, Order, OrderBookSnapshot, OrderId, Side};
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
@@ -144,24 +144,34 @@ impl OrderBook {
     pub fn depth_snapshot(
         &self,
         levels: usize,
-    ) -> (Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>) {
-        let bids: Vec<(Decimal, Decimal)> = self
+    ) -> OrderBookSnapshot {
+        let bids = self
             .bids
             .levels
             .iter()
             .rev() // highest first.
             .take(levels)
-            .map(|(price, level)| (*price, level.total_quantity))
+            .map(|(price, level)| LevelSnapshot {
+                price: *price,
+                quantity: level.total_quantity,
+            })
             .collect();
 
-        let asks: Vec<(Decimal, Decimal)> = self
+        let asks = self
             .asks
             .levels
             .iter() // lowest first
             .take(levels)
-            .map(|(price, level)| (*price, level.total_quantity))
+            .map(|(price, level)| LevelSnapshot {
+                price: *price,
+                quantity: level.total_quantity,
+            })
             .collect();
 
-        (bids, asks)
+        OrderBookSnapshot {
+            bids,
+            asks,
+            timestamp_ns: 0, // TODO: pull a real timestamp here.
+        }
     }
 }
