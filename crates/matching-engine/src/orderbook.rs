@@ -43,6 +43,31 @@ impl HalfBook {
         let level = self.levels.entry(price).or_default();
         level.add(order.id, order.quantity_remaining);
     }
+
+    /// Remove an order from a price level. CLeans up empty levels.
+    pub fn remove(&mut self, price: Decimal, order_id: OrderId) {
+        if let Some(level) = self.levels.get_mut(&price) {
+            level.orders.retain(|id| *id != order_id);
+            if level.is_empty() {
+                self.levels.remove(&price);
+            }
+        }
+    }
+
+    /// Best bid = highest price in the book
+    pub fn best_bid_price(&self) -> Option<Decimal> {
+        self.levels.keys().next_back().copied()
+    }
+
+    /// Best ask - lowest price in the book.
+    pub fn best_ask_price(&self) -> Option<Decimal> {
+        self.levels.keys().next().copied()
+    }
+
+    /// Peek at the front order ID at a given price level.
+    pub fn front_order_at(&self, price: &Decimal) -> Option<OrderId> {
+        self.levels.get(price).and_then(|l| l.orders.front().copied())
+    }
 }
 
 pub struct OrderBook {

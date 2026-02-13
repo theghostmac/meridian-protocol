@@ -15,7 +15,7 @@ pub enum Side {
 }
 
 /// Unique order identifier - wrapping UUID for type safety.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct OrderId(pub Uuid);
 
 impl OrderId {
