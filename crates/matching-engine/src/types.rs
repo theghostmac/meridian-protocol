@@ -1,5 +1,5 @@
-use rust_decimal::Decimal;
-use std::collections::BTreeMap;
+use std::fmt;
+use rust_decimal::Decimal
 use uuid::Uuid;
 
 /// Which side of the book an order sits on.
@@ -19,10 +19,31 @@ impl OrderId {
     }
 }
 
+impl Default for OrderId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A trading pair, e.g. SOL/USDT
 pub struct TradingPair {
     pub base: String,
     pub quote: String,
+}
+
+impl TradingPair {
+    pub fn new(base: impl Into<String>, quote: impl Into<String>) -> Self {
+        Self {
+            base: base.into(),
+            quote: quote.into(),
+        }
+    }
+}
+
+impl fmt::Display for TradingPair {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.base, self.quote)
+    }
 }
 
 /// Order type - we start with Limit only, Market comes later.
@@ -31,6 +52,7 @@ pub enum OrderType {
     Market,
 }
 
+/// Current lifecycle state of an order.
 pub enum OrderStatus {
     Open,
     PartiallyFilled,
@@ -38,6 +60,10 @@ pub enum OrderStatus {
     Cancelled,
 }
 
+/// The core order type submitted to the engine.
+///
+/// Uses `Decimal` for price/quantity to avoid floating-point
+/// precision issues.
 struct Order {
     pub id: OrderId,
     pub pair: TradingPair,
@@ -74,4 +100,11 @@ pub struct Fill {
     pub taker_side: Side,
 
     pub timestamp_ns: u64,
+}
+
+/// Result returned by the engine after processing an order.
+pub struct MatchResult {
+    pub order_id: OrderId,
+    pub fills: Vec<Fill>,
+    pub status: OrderStatus,
 }
