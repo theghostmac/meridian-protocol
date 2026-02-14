@@ -240,20 +240,24 @@ contract MeridianSettlement is IMeridianSettlement {
     ///         256 nonces share a single storage slt -> amortized cost for traders
     ///         with many fills in one block.
     function _useNonce(address trader, uint64 nonce) internal {
-        uint256 wordPos = uint256(nonce) >> 8; // nonce / 256
-        uint256 bitPos = uint256(nonce) & 0xff; // nonce % 256
-        uint256 mask = 1 << bitPos;
+        // Use bitwise operators for speed: >> 8 is / 256, & 0xff is % 256
+        uint256 wordPos = uint256(nonce) >> 8;
+        uint256 bitPos = uint256(nonce) & 0xff;
+
+        // Use a 1 shifted by bitPos to create the mask
+        uint256 mask = uint256(1) << bitPos;
 
         uint256 word = _nonceBitmap[trader][wordPos];
         if (word & mask != 0) revert NonceAlreadyUsed(trader, nonce);
 
-        // Mark nonce as used.
+        // Mark as used
         _nonceBitmap[trader][wordPos] = word | mask;
     }
 
     function _isNonceUsed(address trader, uint64 nonce) internal view returns (bool) {
-        uint256 wordPos = uint256(nonce) >> 8; // equivalent to nonce / 256
-        uint256 bitPos = nonce & 0xFF; // equivalent to nonce %
+        uint256 wordPos = uint256(nonce) >> 8;
+        uint256 bitPos = uint256(nonce) & 0xff;
+        // Shift the word down and check the last bit
         return (_nonceBitmap[trader][wordPos] >> bitPos) & 1 == 1;
     }
 
