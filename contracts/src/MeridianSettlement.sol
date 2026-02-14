@@ -270,8 +270,15 @@ contract MeridianSettlement is IMeridianSettlement {
         address taker,
         uint64 makerNonce,
         uint64 takerNonce
-    ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(maker, taker, makerNonce, takerNonce));
+    ) internal pure returns (bytes32 id) {
+        assembly {
+            let ptr := mload(0x40) // get the free memory pointer.
+            mstore(ptr, maker)
+            mstore(add(ptr, 20), taker)
+            mstore(add(ptr, 40), makerNonce)
+            mstore(add(ptr, 48), takerNonce)
+            id := keccak256(ptr, 56) // hash the 56 bytes we just packed.
+        }
     }
 
     function _onlyOperator() internal view {

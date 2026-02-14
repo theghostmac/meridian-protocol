@@ -10,17 +10,18 @@ library OrderLib {
 
     /// @dev EIP-712 typehash for a signed Order intent.
     ///      Fields ordered by type size (descending) to minimize padding.
-    bytes32 internal constant ORDER_TYPEHASH = keccak256(
-        "Order("
-           "address trader,"
-           "address tokenIn,"
-           "address tokenOut,"
-           "uint128 amountIn,"
-           "uint128 amountOutMin,"
-           "uint64 nonce,"
-           "uint64 deadline"
-        ")"
-    );
+    bytes32 internal constant ORDER_TYPEHASH =
+        keccak256(
+            "Order("
+            "address trader,"
+            "address tokenIn,"
+            "address tokenOut,"
+            "uint128 amountIn,"
+            "uint128 amountOutMin,"
+            "uint64 nonce,"
+            "uint64 deadline"
+            ")"
+        );
 
     // ─── Structs ─────────────────────────────────────────────────────────────
 
@@ -37,8 +38,8 @@ library OrderLib {
         address tokenOut;
         uint128 amountIn;
         uint128 amountOutMin;
-        uint64  nonce;
-        uint64  deadline;
+        uint64 nonce;
+        uint64 deadline;
     }
 
     // ─── Hashing ─────────────────────────────────────────────────────────────
@@ -46,17 +47,25 @@ library OrderLib {
     /// @notice  Compute the EIP-712 struct hash of an Order.
     /// @dev     Uses abi.encode (not encodePacked) per EIP-712 spec.
     ///          All fixed-size types - no dynamic length issues.
-    function hash(Order calldata order) internal pure returns (bytes32) {
-        return keccak256(abi.encode(
-            ORDER_TYPEHASH,
-            order.trader,
-            order.tokenIn,
-            order.tokenOut,
-            order.amountIn,
-            order.amountOutMin,
-            order.nonce,
-            order.deadline
-        ));
+    function hash(Order calldata order) internal pure returns (bytes32 result) {
+        bytes32 typeHash = ORDER_TYPEHASH;
+        assembly {
+            // Use the free memory pointer to avoid corrupting storage/other vars
+            let ptr := mload(0x40)
+
+            mstore(ptr, typeHash)
+            // 'order' is the pointer to the start of the struct in calldata
+            mstore(add(ptr, 32), calldataload(order)) // trader (padded)
+            mstore(add(ptr, 64), calldataload(add(order, 32))) // tokenIn
+            mstore(add(ptr, 96), calldataload(add(order, 64))) // tokenOut
+            mstore(add(ptr, 128), calldataload(add(order, 96))) // amountIn
+            mstore(add(ptr, 160), calldataload(add(order, 128))) // amountOutMin
+            mstore(add(ptr, 192), calldataload(add(order, 160))) // nonce
+            mstore(add(ptr, 224), calldataload(add(order, 192))) // deadline
+
+            // Hash the 8 words (Typehash + 7 fields) = 256 bytes
+            result := keccak256(ptr, 256)
+        }
     }
 
     // ─── Signature Verification ─────────────────────────────────────────────
@@ -73,13 +82,34 @@ library OrderLib {
         bytes32 r,
         bytes32 s
     ) internal pure returns (address signer) {
-        bytes32 digest = keccak256(abi.encodePacked(
-            "\x19\x01",
-            domainSeparator,
-            hash(order)
-        ));
+        bytes32 structHash = hash(order);
+        bytes32 digest;
+
+        assembly {
+            // Get free memory pointer
+            let ptr := mload(0x40)
+
+            // EIP-712 prefix: \x19\x01
+            // We store the 2-byte prefix at the start of a 32-byte word.
+            // To get it packed correctly for a 66-byte hash, we can shift it or
+            // simply use mstore8/mstore.
+            mstore(
+                ptr,
+                0x1901000000000000000000000000000000000000000000000000000000000000
+            )
+
+            // Store the domainSeparator starting exactly 2 bytes after the prefix
+            mstore(add(ptr, 2), domainSeparator)
+
+            // Store the structHash exactly 32 bytes after the domainSeparator
+            mstore(add(ptr, 34), structHash)
+
+            // Hash the 66 bytes (2 + 32 + 32)
+            digest := keccak256(ptr, 66)
+        }
+
         signer = ecrecover(digest, v, r, s);
-        // ecrecover returns address(0) on failure, which we can check in the caller.
+        // Note: ecrecover returns address(0) on failure, which we check in verify().
     }
 
     /// @notice Validate that the order's signer matches order.trader.
@@ -102,11 +132,13 @@ library OrderLib {
     /// @notice Validate order fields before settlement.
     function validate(Order calldata order) internal view {
         if (order.trader == address(0)) revert ZeroAddress();
-        if (order.tokenIn == address(0) || order.tokenOut == address(0)) revert ZeroAddress();
+        if (order.tokenIn == address(0) || order.tokenOut == address(0))
+            revert ZeroAddress();
         if (order.amountIn == 0 || order.amountOutMin == 0) revert ZeroAmount();
-        if (block.timestamp > order.deadline) revert OrderExpired(order.deadline, uint64(block.timestamp));
+        if (block.timestamp > order.deadline)
+            revert OrderExpired(order.deadline, uint64(block.timestamp));
     }
-    
+
     // ─── Errors ─────────────────────────────────────────────────────────────
 
     error InvalidSignature(address expected, address recovered);
