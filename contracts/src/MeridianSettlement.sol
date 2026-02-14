@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import { IERC20 } from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { IMeridianSettlement } from "./interfaces/IMeridianSettlement.sol";
 
 /// @title  MeridianSettlement
 /// @author Meridian Protocol
@@ -21,9 +22,60 @@ import { IERC20 } from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC
 ///         SECURITY
 ///         ─────────────────────────────────────────────────────────────────
 ///         
-contract MeridianSettlement {
+contract MeridianSettlement is IMeridianSettlement {
 
-    constructor(){
+    // ─── Constants ────────────────────────────────────────────────────────
 
+    string public constant NAME = "MeridianSettlement";
+    string public constant VERSION = "1";
+
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(
+        "EIP712Domain(string name, string  version, uint256 chainId, addresss verifyingContract)"
+    );
+
+    // ─── Immutables ───────────────────────────────────────────────────────
+
+    /// @dev Set once at deployment, use in every signature verification.
+    bytes32 public immutable override domainSeparator;
+
+    // ─── Storage ──────────────────────────────────────────────────────────
+
+    /// @notice Address authorized to submit settlement batches.
+    address public operator;
+
+    /// @notice Owner ─ can rotate the operator.
+    address public owner;
+
+    /// @dev    Notice bitmap: trader -> (nonce / 256) -> bitmap.
+    ///         Bit at position (nonce % 256) indicates whether that nonce has been used.
+    ///         Saves 255 SLOADs compared to a mapping(uint64 => bool) for nonces.
+    mapping(address => mapping(uint256 => uint256)) private _nonceBitmap;
+
+    // ─── Constructor ──────────────────────────────────────────────────────
+
+    constructor(address _operator) {
+        owner = msg.sender;
+        operator = _operator;
+
+        domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes(NAME)),
+                keccak256(bytes(VERSION)),
+                block.chainid,
+                address(this)
+            )
+        );
+        
+        emit OperatorUpdated(address(0),  _operator);
     }
+
+    // ─── Modifiers ────────────────────────────────────────────────────────
+
+    modifier onlyOperator() {
+        if (msg.sender != operator) revert Unauthorized(msg.sender);
+        _;
+    }
+
+    
 }
