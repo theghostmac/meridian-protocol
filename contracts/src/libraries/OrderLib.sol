@@ -24,7 +24,7 @@ library OrderLib {
 
     // ─── Structs ─────────────────────────────────────────────────────────────
 
-    /// @Notice  A signed intent submitted by a trader.
+    /// @notice  A signed intent submitted by a trader.
     /// @dev     Packed into two 32-byte slots after the addresses:
     ///          slot0: trader (20) + 12 byte padding -> address
     ///          slot1: tokenIn (20) + 12 bytes padding -> address

@@ -38,7 +38,7 @@ contract MeridianSettlement is IMeridianSettlement {
     // ─── Immutables ───────────────────────────────────────────────────────
 
     /// @dev Set once at deployment, use in every signature verification.
-    bytes32 public immutable override domainSeparator;
+    bytes32 public immutable DOMAIN_SEPARATOR;
 
     // ─── Storage ──────────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ contract MeridianSettlement is IMeridianSettlement {
         owner = msg.sender;
         operator = _operator;
 
-        domainSeparator = keccak256(
+        DOMAIN_SEPARATOR = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPEHASH,
                 keccak256(bytes(NAME)),
@@ -141,6 +141,11 @@ contract MeridianSettlement is IMeridianSettlement {
         return _isNonceUsed(trader, nonce);
     }
 
+    /// @inheritdoc IMeridianSettlement
+    function domainSeparator() external view override returns (bytes32) {
+        return DOMAIN_SEPARATOR;
+    }
+
     // ─── Admin ───────────────────────────────────────────────
 
     /// @notice Rotate the settlement operator.
@@ -176,8 +181,8 @@ contract MeridianSettlement is IMeridianSettlement {
         OrderLib.validate(taker);
 
         // 2. Verify EIP-712 signatures.
-        OrderLib.verify(domainSeparator, maker, makerSig.v, makerSig.r, makerSig.s);
-        OrderLib.verify(domainSeparator, taker, takerSig.v, takerSig.r, takerSig.s);
+        OrderLib.verify(DOMAIN_SEPARATOR, maker, makerSig.v, makerSig.r, makerSig.s);
+        OrderLib.verify(DOMAIN_SEPARATOR, taker, takerSig.v, takerSig.r, takerSig.s);
 
         // 3. Check and consume nonces (CEI).
         _useNonce(maker.trader, maker.nonce);
@@ -235,17 +240,15 @@ contract MeridianSettlement is IMeridianSettlement {
     ///         256 nonces share a single storage slt -> amortized cost for traders
     ///         with many fills in one block.
     function _useNonce(address trader, uint64 nonce) internal {
-        uint256 wordIndex = nonce / 256;
-        uint256 bitIndex = nonce % 256;
-        uint256 mask = 1 << bitIndex;
+        uint256 wordPos = uint256(nonce) >> 8; // nonce / 256
+        uint256 bitPos = uint256(nonce) & 0xff; // nonce % 256
+        uint256 mask = 1 << bitPos;
 
-        uint256 bitmap = _nonceBitmap[trader][wordIndex];
-        if (bitmap & mask != 0) {
-            revert NonceAlreadyUsed(trader, nonce);
-        }
+        uint256 word = _nonceBitmap[trader][wordPos];
+        if (word & mask != 0) revert NonceAlreadyUsed(trader, nonce);
 
         // Mark nonce as used.
-        _nonceBitmap[trader][wordIndex] = bitmap | mask;
+        _nonceBitmap[trader][wordPos] = word | mask;
     }
 
     function _isNonceUsed(address trader, uint64 nonce) internal view returns (bool) {
