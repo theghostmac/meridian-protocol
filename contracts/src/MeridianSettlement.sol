@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.33;
 
-import { IERC20 } from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import { IMeridianSettlement } from "./interfaces/IMeridianSettlement.sol";
-import { FillLib } from "./libraries/FillLib.sol";
-import { OrderLib } from "./libraries/OrderLib.sol";
+import {
+    IERC20
+} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {IMeridianSettlement} from "./interfaces/IMeridianSettlement.sol";
+import {FillLib} from "./libraries/FillLib.sol";
+import {OrderLib} from "./libraries/OrderLib.sol";
 
 /// @title  MeridianSettlement
 /// @author Meridian Protocol
@@ -20,20 +22,35 @@ import { OrderLib } from "./libraries/OrderLib.sol";
 ///             5. Emits structured events for the indexer.
 ///         PERFORMANCE NOTES
 ///         ─────────────────────────────────────────────────────────────────
+///         - All orders/fill arrays are `calldata` - never copied to memory.
+///         - Nonces use a bitmap (uint256 per 256 nonces) to pack 256 nonce
+///           states into a single SLOAD/SSTORE, saving gas for active traders.
+///         - Typed errors instead of string reverts - saves ~50 gas per revert.
+///         - No SafeERC20 wrapper - we check return values manually to avoid
+///           he extra DELEGATECALL (and its cost) for standard ERC-20 tokens.
+///         - Solidity 0.8.33+ has built-in overflow checks, so we don't need
+///           SafeMath or `unchecked` blocks.
 ///
 ///         SECURITY
 ///         ─────────────────────────────────────────────────────────────────
-///         
+///         - Only the designated `operator` (the engine's settlement submitter)
+///           can call `settleBatch` to prevent front-running and invalid batches.
+///           This is a trusted role - the operator cannot steal funds only submit
+///           valid signed fills.
+///         - Traders retain sovereignty: they sign intents with deadlines and
+///           can cancel nonces at any time.
+///         - Reentrancy is not a concern because we update state (nonces) before
+///           external calls and emit events after (Checks-Effects-Interactions pattern).
 contract MeridianSettlement is IMeridianSettlement {
-
     // ─── Constants ────────────────────────────────────────────────────────
 
     string public constant NAME = "MeridianSettlement";
     string public constant VERSION = "1";
 
-    bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(
-        "EIP712Domain(string name, string  version, uint256 chainId, address verifyingContract)"
-    );
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256(
+            "EIP712Domain(string name, string  version, uint256 chainId, address verifyingContract)"
+        );
 
     // ─── Immutables ───────────────────────────────────────────────────────
 
@@ -68,8 +85,8 @@ contract MeridianSettlement is IMeridianSettlement {
                 address(this)
             )
         );
-        
-        emit OperatorUpdated(address(0),  _operator);
+
+        emit OperatorUpdated(address(0), _operator);
     }
 
     // ─── Modifiers ────────────────────────────────────────────────────────
@@ -78,7 +95,7 @@ contract MeridianSettlement is IMeridianSettlement {
         _onlyOperator();
         _;
     }
-    
+
     modifier onlyOwner() {
         _onlyOwner();
         _;
@@ -115,12 +132,18 @@ contract MeridianSettlement is IMeridianSettlement {
         ) {
             revert ArrayLengthMismatch();
         }
-        
+
         uint256 gasStart = gasleft();
 
         // @dev Solidity version 0.8.33+ has built-in overflow checks.
         for (uint256 i; i < len; ++i) {
-            _settleFill(makers[i], takers[i], fills[i], makerSigs[i], takerSigs[i]);
+            _settleFill(
+                makers[i],
+                takers[i],
+                fills[i],
+                makerSigs[i],
+                takerSigs[i]
+            );
         }
 
         emit BatchSettled(batchId, len, gasStart - gasleft());
@@ -137,7 +160,10 @@ contract MeridianSettlement is IMeridianSettlement {
     // ─── Views ─────────────────────────────────────────────────
 
     /// @inheritdoc IMeridianSettlement
-    function isNonceUsed(address trader, uint64 nonce) external view returns (bool) {
+    function isNonceUsed(
+        address trader,
+        uint64 nonce
+    ) external view returns (bool) {
         return _isNonceUsed(trader, nonce);
     }
 
@@ -165,7 +191,7 @@ contract MeridianSettlement is IMeridianSettlement {
     /// @dev   Process a single fill:
     ///        1. Validate order fields.
     ///        2. Verify maker and taker signatures.
-    ///        3. Check and consume nonces as used (stae change BEFORE transfers - CEI).
+    ///        3. Check and consume nonces as used (state change BEFORE transfers - CEI).
     ///        4. Validate fill amounts against order constraints.
     ///        5. Execute ERC-20 transfers to settle the fill.
     ///        6. Emit events.
@@ -181,8 +207,20 @@ contract MeridianSettlement is IMeridianSettlement {
         OrderLib.validate(taker);
 
         // 2. Verify EIP-712 signatures.
-        OrderLib.verify(DOMAIN_SEPARATOR, maker, makerSig.v, makerSig.r, makerSig.s);
-        OrderLib.verify(DOMAIN_SEPARATOR, taker, takerSig.v, takerSig.r, takerSig.s);
+        OrderLib.verify(
+            DOMAIN_SEPARATOR,
+            maker,
+            makerSig.v,
+            makerSig.r,
+            makerSig.s
+        );
+        OrderLib.verify(
+            DOMAIN_SEPARATOR,
+            taker,
+            takerSig.v,
+            takerSig.r,
+            takerSig.s
+        );
 
         // 3. Check and consume nonces (CEI).
         _useNonce(maker.trader, maker.nonce);
@@ -195,8 +233,18 @@ contract MeridianSettlement is IMeridianSettlement {
         //    maker sends tokenIn -> taker
         //    taker sends tokenIn -> maker
         //    (maker.tokenIn == taker.tokenOut, verified in FillLib)
-        _transferFrom(maker.tokenIn, maker.trader, taker.trader, fill.makerAmountIn);
-        _transferFrom(taker.tokenIn, taker.trader, maker.trader, fill.takerAmountIn);
+        _transferFrom(
+            maker.tokenIn,
+            maker.trader,
+            taker.trader,
+            fill.makerAmountIn
+        );
+        _transferFrom(
+            taker.tokenIn,
+            taker.trader,
+            maker.trader,
+            fill.takerAmountIn
+        );
 
         // 6. Emit structured fill event for indexer.
         emit OrderFilled(
@@ -223,7 +271,12 @@ contract MeridianSettlement is IMeridianSettlement {
         uint256 amount
     ) internal {
         (bool success, bytes memory data) = token.call(
-            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
+            abi.encodeWithSelector(
+                IERC20.transferFrom.selector,
+                from,
+                to,
+                amount
+            )
         );
         if (!success) {
             revert TransferFailed(token, from, to, amount);
@@ -254,7 +307,10 @@ contract MeridianSettlement is IMeridianSettlement {
         _nonceBitmap[trader][wordPos] = word | mask;
     }
 
-    function _isNonceUsed(address trader, uint64 nonce) internal view returns (bool) {
+    function _isNonceUsed(
+        address trader,
+        uint64 nonce
+    ) internal view returns (bool) {
         uint256 wordPos = uint256(nonce) >> 8;
         uint256 bitPos = uint256(nonce) & 0xff;
         // Shift the word down and check the last bit
