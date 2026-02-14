@@ -42,4 +42,16 @@ interface IMeridianSettlement {
         uint256         fillCount,
         uint256         gasUsed
     );
+
+    // ─── Errors ───────────────────────────────────────────────────────────────
+
+    error Unauthorized(address caller);
+    error NonceAlreadyUsed(address trader, uint64 nonce);
+    error BatchEmpty();
+    error ArrayLengthMismatch();
+    error TransferFailed(address token, address from, address to, uint256 amount);
+
+    // ─── Core functions ────────────────────────────────────────────────────────
+
+    
 }
