@@ -95,6 +95,5 @@ contract MeridianSettlement is IMeridianSettlement {
     ///            Batch of 50 fills:          ~1,250,000 gas (fits in one Base block)
     function settleBatch(
     ) external onlyOperator {
-        
     }
 }
