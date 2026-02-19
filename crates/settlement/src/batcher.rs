@@ -182,7 +182,7 @@ impl Batcher {
     /// Drain pending fills into a SettlementBatch and reset state.
     /// Only call after `should_flush` returns Some.
     pub fn flush(&mut self, reason: FlushReason) -> Option<SettlementBatch> {
-        
+
     }
 }
 
