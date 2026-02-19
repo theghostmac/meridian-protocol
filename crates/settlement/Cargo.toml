@@ -12,6 +12,7 @@ thiserror = {workspace = true}
 anyhow = {workspace = true}
 uuid = {workspace = true}
 rust_decimal = {workspace = true}
+tracing = {workspace = true}
 
 alloy = { version = "1.6.3", features = [
     "full",
