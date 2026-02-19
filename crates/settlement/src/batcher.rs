@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use crate::config::BatchConfig;
 
 use tracing::{debug, info, instrument, warn};
-use crate::types::PendingFill;
+use crate::types::{PendingFill, SettlementBatch};
 
 /// Rolling gas price tracker for dynamic flush decisions.
 ///
@@ -182,7 +182,162 @@ impl Batcher {
     /// Drain pending fills into a SettlementBatch and reset state.
     /// Only call after `should_flush` returns Some.
     pub fn flush(&mut self, reason: FlushReason) -> Option<SettlementBatch> {
+        if self.pending.is_empty() {
+            return None;
+        }
 
+        self.batch_counter += 1;
+        let batch_id = self.batch_counter;
+        let fills = std::mem::take(&mut self.pending);
+        self.oldest_fill_at = None;
+
+        let age_ms = self
+            .oldest_fill_at
+            .map(|t| t.elapsed().as_millis() as u64)
+            .unwrap_or(0);
+
+        info!(
+            batch_id,
+            fill_count = fills.len(),
+            flush_reason = reason.as_str(),
+            oldest_fill_age_ms = age_ms,
+            "batch flushed"
+        );
+
+        // Emit metrics.
+        metrics::counter!("meridian.batch.flushed",
+            "reason" => reason.as_str()
+        ).increment(1);
+        metrics::gauge!("meridian.batch.fill_count").set(fills.len() as f64);
+
+        Some(SettlementBatch {
+            id: batch_id,
+            fills,
+            flush_reason: reason,
+            created_at: std::time::SystemTime::now(),
+        })
+    }
+
+    /// Current number of pending fills.
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Age of the oldest pending fill, if any.
+    pub fn oldest_fill_age(&self) -> Option<Duration> {
+        self.oldest_fill_at.map(|t| t.elapsed())
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::PendingFill;
+
+    fn make_config(max_size: usize, max_age_ms: u64, min_gas_size: usize) -> BatchConfig {
+        BatchConfig {
+            max_batch_size: max_size,
+            max_batch_age: Duration::from_millis(max_age_ms),
+            min_batch_size_for_gas_trigger: min_gas_size,
+        }
+    }
+
+    fn dummy_fill(n: u64) -> PendingFill {
+        PendingFill {
+            id: uuid::Uuid::from_u128(n as u128),
+            maker_order_id: uuid::Uuid::from_u128(n * 2),
+            taker_order_id: uuid::Uuid::from_u128(n * 3),
+            price: rust_decimal::Decimal::new(100, 0),
+            quantity: rust_decimal::Decimal::new(10, 0),
+            taker_side: matching_engine::Side::Bid,
+            timestamp_ns: n * 1_000_000,
+        }
+    }
+
+    #[test]
+    fn test_flush_on_max_size() {
+        let mut batcher = Batcher::new(make_config(3, 10_000, 1));
+        let oracle = GasPriceOracle::new(10);
+
+        batcher.push(dummy_fill(1));
+        batcher.push(dummy_fill(2));
+        assert!(batcher.should_flush(&oracle).is_none());
+
+        batcher.push(dummy_fill(3));
+        assert_eq!(batcher.should_flush(&oracle), Some(FlushReason::MaxSizeReached));
+    }
+
+    #[test]
+    fn test_flush_on_opportunistic_gas() {
+        let mut batcher = Batcher::new(make_config(50, 10_000, 2));
+        let mut oracle = GasPriceOracle::new(10);
+
+        // Below the opportunistic threshold.
+        oracle.record(500_000);
+
+        batcher.push(dummy_fill(1));
+        // Only 1 fill — below min_gas_size of 2.
+        assert!(batcher.should_flush(&oracle).is_none());
+
+        batcher.push(dummy_fill(2));
+        // Now at min — gas is opportunistic, should flush.
+        assert_eq!(
+            batcher.should_flush(&oracle),
+            Some(FlushReason::OpportunisticGas)
+        );
+    }
+
+    #[test]
+    fn test_flush_below_average_gas() {
+        let mut batcher = Batcher::new(make_config(50, 10_000, 2));
+        let mut oracle = GasPriceOracle::new(10);
+
+        // Establish baseline: average = 1_000_000 wei
+        for _ in 0..10 {
+            oracle.record(1_000_000);
+        }
+
+        // Current gas is 80% of average (below 85% threshold).
+        oracle.record(800_000);
+
+        batcher.push(dummy_fill(1));
+        batcher.push(dummy_fill(2));
+
+        assert_eq!(
+            batcher.should_flush(&oracle),
+            Some(FlushReason::BelowAverageGas)
+        );
+    }
+
+    #[test]
+    fn test_no_flush_high_gas() {
+        let mut batcher = Batcher::new(make_config(50, 10_000, 2));
+        let mut oracle = GasPriceOracle::new(10);
+
+        // Establish baseline.
+        for _ in 0..10 {
+            oracle.record(1_000_000);
+        }
+        // Current gas is ABOVE average — no gas trigger.
+        oracle.record(2_000_000);
+
+        batcher.push(dummy_fill(1));
+        batcher.push(dummy_fill(2));
+
+        // Gas is above average and below max_size — no flush.
+        assert!(batcher.should_flush(&oracle).is_none());
+    }
+
+    #[test]
+    fn test_flush_drains_pending() {
+        let mut batcher = Batcher::new(make_config(3, 10_000, 1));
+
+        batcher.push(dummy_fill(1));
+        batcher.push(dummy_fill(2));
+        batcher.push(dummy_fill(3));
+
+        let batch = batcher.flush(FlushReason::MaxSizeReached).unwrap();
+        assert_eq!(batch.fills.len(), 3);
+        assert_eq!(batcher.pending_count(), 0);
+    }
+}
