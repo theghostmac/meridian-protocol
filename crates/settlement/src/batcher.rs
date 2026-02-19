@@ -48,9 +48,9 @@ impl GasPriceOracle {
 
     /// True if current gas is below `factor` x rolling average.
     /// E.g. factor=0.85 -> true when gas is 15% below recent average.
-    pub fn is_below_average(&self, factor: u64) -> bool {
+    pub fn is_below_average(&self, factor: f64) -> bool {
         self.rolling_average()
-            .map(|avg| self.current_wei < (avg as f64 * factor) as u128)
+            .map(|avg| (self.current_wei as f64) < (avg as f64 * factor))
             .unwrap_or(false)
     }
 
@@ -120,8 +120,10 @@ impl Batcher {
         }
         debug!(
             fill_id = %fill.id,
-
-        )
+            pending_count = self.pending.len() + 1,
+            "fill queued"
+        );
+        self.pending.push(fill);
     }
 
     /// Evaluate whether a flush should happen given current gas conditions.
@@ -245,8 +247,8 @@ mod tests {
     fn dummy_fill(n: u64) -> PendingFill {
         PendingFill {
             id: uuid::Uuid::from_u128(n as u128),
-            maker_order_id: uuid::Uuid::from_u128(n * 2),
-            taker_order_id: uuid::Uuid::from_u128(n * 3),
+            maker_order_id: uuid::Uuid::from_u128((n * 2) as u128),
+            taker_order_id: uuid::Uuid::from_u128((n * 3) as u128),
             price: rust_decimal::Decimal::new(100, 0),
             quantity: rust_decimal::Decimal::new(10, 0),
             taker_side: matching_engine::Side::Bid,
@@ -292,13 +294,16 @@ mod tests {
         let mut batcher = Batcher::new(make_config(50, 10_000, 2));
         let mut oracle = GasPriceOracle::new(10);
 
-        // Establish baseline: average = 1_000_000 wei
+        // Establish baseline: average = 2_000_000 wei
         for _ in 0..10 {
-            oracle.record(1_000_000);
+            oracle.record(2_000_000);
         }
 
-        // Current gas is 80% of average (below 85% threshold).
-        oracle.record(800_000);
+        // Current gas is 80% of average (1,600,000 wei).
+        // This is:
+        //   - ABOVE opportunistic threshold (1,000,000), so won't trigger that
+        //   - BELOW 85% of rolling average (0.85 * 2,000,000 = 1,700,000)
+        oracle.record(1_600_000);
 
         batcher.push(dummy_fill(1));
         batcher.push(dummy_fill(2));
