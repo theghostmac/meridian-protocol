@@ -4,3 +4,30 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+matching_engine = { workspace = true }
+common = {workspace = true}
+tokio = {workspace = true}
+serde = {workspace = true}
+thiserror = {workspace = true}
+anyhow = {workspace = true}
+uuid = {workspace = true}
+rust_decimal = {workspace = true}
+tracing = {workspace = true}
+
+alloy = { version = "1.6.3", features = [
+    "full",
+    "node-bindings",
+    "rpc-types",
+    "provider-http",
+    "signers",
+    "signer-local",
+    "contract",
+    "sol-types"
+] }
+
+revm = {workspace = true}
+tokio-util = {workspace = true}
+futures = {workspace = true}
+tracing-subscriber = {workspace = true}
+metrics = {workspace = true}
+metrics-exporter-prometheus = {workspace = true}
